@@ -1,3 +1,5 @@
+# New Version
+Just an try to update this Addon with the help of ChatGPT. I am no expert!
 # Open multiple instances of the same window
 ## Rationale
 May be you want to have a "add" window for each type of Note, so you
