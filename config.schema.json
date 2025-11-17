@@ -48,11 +48,12 @@
           "description": "Opening multiple time the Preferences window",
           "type": "boolean",
           "default": false
-        },
-        "additionalProperties": {
-          "type": "boolean",
-          "default": true
         }
+      },
+      "additionalProperties": {
+        "type": "boolean",
+        "description": "Additional dialog names fall back to this boolean value.",
+        "default": true
       }
     }
   }
