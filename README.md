@@ -1,5 +1,8 @@
 # New Version
-Just an try to update this Addon with the help of ChatGPT. I am no expert!
+This fork refreshes the original add-on so that it keeps working with the
+current Qt6 / Python 3.9+ based releases of Anki (2.1.70+).  The core idea
+remains untouched: allow multiple simultaneous instances of selected dialogs.
+
 # Open multiple instances of the same window
 ## Rationale
 May be you want to have a "add" window for each type of Note, so you
@@ -49,13 +52,12 @@ window calling it. I.e. it won't work with a prompt asking you to
 confirm/cancel something, or to say «ok». It should work with the
 browser.
 
-This add-on redefine:
-* `aqt.__init__`'s class `DialogManager`. More precisely, the
-  new class inherits from the last one. When a window may be opened a
-  single time, the former method is called.
-* `aqt.editcurrent`'s method `EditCurrent.onReset` is
-  redefined. Thus this add-on may be incompatible with other add-on
-  changing this.
+This add-on now patches only the dialog manager's `open()` helper so it
+continues to work even though Anki switched from the historic tuple based
+storage to dataclass based dialog metadata.  When multiple instances are
+requested a fresh widget is created directly from the dialog's registered
+creator function while the original singleton instance tracked by Anki is left
+untouched.
 
 
 

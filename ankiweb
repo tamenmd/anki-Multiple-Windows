@@ -1,3 +1,5 @@
 Allow to open multiple time the same window. For example, you can add a new card while a card is currently being added.
 
+This fork keeps the add-on compatible with current Qt6 based Anki releases (2.1.70+).
+
 For more information, please go to https://github.com/Arthur-Milchior/anki-Multiple-Windows
