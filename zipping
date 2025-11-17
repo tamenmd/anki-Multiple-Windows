@@ -1,1 +1,10 @@
-zip multipleWindows.zip *py config* zipping README.md
+#!/bin/sh
+set -euo pipefail
+
+zip -r multipleWindows.zip \
+  __init__.py \
+  config.json \
+  config.md \
+  config.schema.json \
+  README.md \
+  ankiweb
