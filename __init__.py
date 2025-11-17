@@ -7,12 +7,7 @@ from __future__ import annotations
 
 from typing import Any, Callable, Dict, List, Optional
 
-try:  # Anki 2.1.66+: DialogManager lives in aqt.dialogs
-    from aqt.dialogs import DialogManager
-except Exception:  # pragma: no cover - fallback for older builds
-    from aqt import DialogManager  # type: ignore
-
-from aqt import mw
+from aqt import dialogs, mw
 from aqt.qt import qconnect
 
 
@@ -65,18 +60,17 @@ if _original_open is None:
 def _resolve_creator(manager: DialogManager, name: str) -> Optional[Callable[..., Any]]:
     """Return the dialog creator function stored in DialogManager.
 
+def _resolve_creator(name: str) -> Optional[Callable[..., Any]]:
+    """Return the dialog creator function stored in DialogManager.
+
     In recent Anki versions ``DialogManager`` keeps ``DialogState`` dataclasses
     instead of ``(creator, instance)`` tuples in ``_dialogs``.  The helper is
     tolerant to both layouts so the add-on keeps working on older as well as
     current builds.
     """
 
-    dialogs_table = getattr(manager, "_dialogs", None)
-    if dialogs_table is None:
-        return None
-
     try:
-        entry = dialogs_table[name]  # type: ignore[index]
+        entry = dialogs._dialogs[name]  # type: ignore[attr-defined]
     except Exception:
         return None
 
@@ -108,7 +102,7 @@ def _remove_instance(instance: Any) -> None:
         _open_multi_dialogs.remove(instance)
 
 
-def _open_patched(self: DialogManager, name: str, *args: Any, **kwargs: Any) -> Any:
+def _open_patched(name: str, *args: Any, **kwargs: Any) -> Any:
     """
     Patched version von dialogs.open.
 
@@ -119,14 +113,14 @@ def _open_patched(self: DialogManager, name: str, *args: Any, **kwargs: Any) -> 
     """
     # Single-instance Dialoge unverändert lassen
     if not should_be_multiple(name):
-        return _original_open(self, name, *args, **kwargs)
+        return _original_open(name, *args, **kwargs)
 
-    creator = _resolve_creator(self, name)
+    creator = _resolve_creator(name)
     if creator is None:
         # Fallback – der Dialog wurde entweder nie registriert oder das Layout
         # des DialogManagers ist unerwartet.  Besser das Originalverhalten
         # beibehalten als Anki zu crashen.
-        return _original_open(self, name, *args, **kwargs)
+        return _original_open(name, *args, **kwargs)
 
     # Neue Instanz erzeugen, ohne die gespeicherte Singleton-Instanz zu überschreiben
     instance = creator(*args, **kwargs)
