@@ -50,8 +50,15 @@ def should_be_multiple(name: str) -> bool:
 _open_multi_dialogs: List[Any] = []
 
 # Originalfunktion sichern, damit wir bei Bedarf zurückfallen können
-_original_open = dialogs.open
+_ORIGINAL_ATTR = "__multiple_windows_original_open__"
+_original_open = getattr(DialogManager, _ORIGINAL_ATTR, None)
+if _original_open is None:
+    _original_open = DialogManager.open
+    setattr(DialogManager, _ORIGINAL_ATTR, _original_open)
 
+
+def _resolve_creator(manager: DialogManager, name: str) -> Optional[Callable[..., Any]]:
+    """Return the dialog creator function stored in DialogManager.
 
 def _resolve_creator(name: str) -> Optional[Callable[..., Any]]:
     """Return the dialog creator function stored in DialogManager.
@@ -167,4 +174,4 @@ def _watch_qobject(instance: Any) -> None:
 
 
 # Patch aktivieren
-dialogs.open = _open_patched
+DialogManager.open = _open_patched
