@@ -1,131 +1,109 @@
 # -*- coding: utf-8 -*-
-# Copyright: Arthur Milchior arthur@milchior.fr
-# encoding: utf8
-# License: GNU GPL, version 3 or later; http://www.gnu.org/copyleft/gpl.html
-# Feel free to contribute to this code on https://github.com/Arthur-Milchior/anki-Multiple-Windows
-# Add-on number 354407385 https://ankiweb.net/shared/info/354407385
-from inspect import stack
+# Multiple windows for selected Anki dialogs
+# Original idea and code base: Arthur Milchior, anki-Multiple-Windows
+# This version is simplified and adapted for newer Anki versions (Qt6, Python 3.9+).
+
+from __future__ import annotations
+
+from typing import Any, Dict, List
 
 import aqt
-import sip
-from anki.hooks import remHook
-from aqt import DialogManager, mw
-from aqt.editcurrent import EditCurrent
+from aqt import dialogs, mw
 
 
-def shouldBeMultiple(name):
-    """Whether window name may have multiple copy.
+# ---------------------------------------------------------------------------
+# Config handling
+# ---------------------------------------------------------------------------
 
-    Ensure that ["multiple"] exsits in the configuration file. The default value being True.
+def _get_config() -> Dict[str, Any]:
+    """Return add-on config dict, always nonempty."""
+    cfg = mw.addonManager.getConfig(__name__) or {}
+    multiple = cfg.get("multiple")
+
+    # Ersteinrichtung: sinnvolle Defaults setzen
+    if multiple is None:
+        multiple = {
+            "default": True,
+            # Standarddialoge, bei denen mehrere Instanzen meist keinen Sinn machen
+            "About": False,
+            "Preferences": False,
+        }
+        cfg["multiple"] = multiple
+        mw.addonManager.writeConfig(__name__, cfg)
+
+    return cfg
+
+
+def should_be_multiple(name: str) -> bool:
+    """Return True if dialog `name` darf mehrfach geöffnet werden."""
+    cfg = _get_config()
+    multiple = cfg.get("multiple", {})
+    if name in multiple:
+        return bool(multiple[name])
+    return bool(multiple.get("default", True))
+
+
+# ---------------------------------------------------------------------------
+# Mehrere Instanzen offen halten
+# ---------------------------------------------------------------------------
+
+_open_multi_dialogs: List[Any] = []
+
+# Originalfunktion sichern, damit wir bei Bedarf zurückfallen können
+_original_open = dialogs.open
+
+
+def _open_patched(name: str, *args: Any, **kwargs: Any) -> Any:
     """
-    userOption = mw.addonManager.getConfig(__name__)
-    if "multiple" not in userOption:
-        userOption["multiple"] = {"default": True}
-        mw.addonManager.writeConfig(__name__, userOption)
-    multipleOption = userOption["multiple"]
-    if name in multipleOption:
-        return multipleOption[name]
-    elif "default" in multipleOption:
-        return multipleOption["default"]
-    else:
-        return True
+    Patched version von dialogs.open.
 
-DialogManager._openDialogs = list()
-
-# init
-old_init = DialogManager.__init__
-
-def __init__(self, oldDialog=None):
-    if oldDialog is not None:
-        DialogManagerMultiple._dialogs = oldDialog._dialogs
-    old_init(self)
-DialogManager.__init__ = __init__
-
-# open
-DialogManager.old_open = DialogManager.open
-def open(self, name, *args, **kwargs):
-    """Open a new window, with name and args.
-
-    Or reopen the window name, if it should be single in the
-    config, and is already opened.
+    - Falls der Dialogname laut Config nur einfach geöffnet werden darf,
+      rufe die Originalfunktion auf.
+    - Falls Mehrfachöffnen erlaubt ist, erzeuge eine neue Instanz über
+      DialogManager._dialogs und tracke sie in _open_multi_dialogs.
     """
-    function = self.openMany if shouldBeMultiple(name) else self.old_open
-    return function(name, *args, **kwargs)
-DialogManager.open = open
+    # Single-instance Dialoge unverändert lassen
+    if not should_be_multiple(name):
+        return _original_open(name, *args, **kwargs)
 
-# openMany
-def openMany(self, name, *args, **kwargs):
-    """Open a new window whose kind is name.
+    dm = dialogs  # aqt.DialogManager Instanz
 
-    keyword arguments:
-    args -- values passed to the opener.
-    name -- the name of the window to open
-    """
-    (creator, _) = self._dialogs[name]
+    # Versuche, den Creator aus der internen _dialogs Tabelle zu holen
+    try:
+        creator, _existing_instance = dm._dialogs[name]  # type: ignore[attr-defined]
+    except Exception:
+        # Wenn das aus irgendeinem Grund fehlschlägt, lieber sicher zurückfallen
+        # auf das Standardverhalten, statt Anki abzuschießen.
+        return _original_open(name, *args, **kwargs)
+
+    # Neue Instanz erzeugen, ohne die gespeicherte Singleton-Instanz zu überschreiben
     instance = creator(*args, **kwargs)
-    self._openDialogs.append(instance)
+    _open_multi_dialogs.append(instance)
+
+    # Dafür sorgen, dass beim Schließen die Instanz aus unserer Liste fliegt
+    _wrap_close_for_instance(instance)
+
     return instance
-DialogManager.openMany = openMany
 
-# markClosedMultiple
-def markClosedMultiple(self):
-    caller = stack()[2].frame.f_locals['self']
-    if caller in self._openDialogs:
-        self._openDialogs.remove(caller)
-DialogManager.markClosedMultiple = markClosedMultiple
 
-# markClosed
-old_markClosed = DialogManager.markClosed
-def markClosed(self, name):
-    """Remove the window of windowName from the set of windows. """
-    # If it is a window of kind single, then call super
-    # Otherwise, use inspect to figure out which is the caller
-    if shouldBeMultiple(name):
-        self.markClosedMultiple()
-    else:
-        old_markClosed(self, name)
-DialogManager.markClosed = markClosed
-
-# allClosed
-old_allClosed = DialogManager.allClosed
-def allClosed(self):
+def _wrap_close_for_instance(instance: Any) -> None:
     """
-    Whether all windows (except the main window) are marked as
-    closed.
+    close Methode der Instanz wrapen, damit sie aus _open_multi_dialogs
+    entfernt wird, wenn das Fenster geschlossen wird.
     """
-    return self._openDialogs == [] and old_allClosed(self)
-DialogManager.allClosed = allClosed
-
-# closeAll
-old_closeAll = DialogManager.closeAll
-def closeAll(self, onsuccess):
-    """Close all windows (except the main one). Call onsuccess when it's done.
-
-    Return True if some window needed closing.
-    None otherwise
-
-    Keyword arguments:
-    onsuccess -- the function to call when the last window is closed.
-    """
-    def callback():
-        """Call onsuccess if all window (except main) are closed."""
-        if self.allClosed():
-            onsuccess()
-        else:
-            # still waiting for others to close
-            pass
-    if self.allClosed():
-        onsuccess()
+    if not hasattr(instance, "close"):
         return
 
-    for instance in self._openDialogs:
-        # It should be useless. I prefer to keep it to avoid erros
-        if not sip.isdeleted(instance):
-            if getattr(instance, "silentlyClose", False):
-                instance.close()
-                callback()
-            else:
-                instance.closeWithCallback(callback)
+    original_close = instance.close
 
-    return old_closeAll(self, onsuccess)
-DialogManager.closeAll = closeAll
+    def wrapped_close(*args: Any, **kwargs: Any) -> Any:
+        if instance in _open_multi_dialogs:
+            _open_multi_dialogs.remove(instance)
+        return original_close(*args, **kwargs)
+
+    # type: ignore, da wir dynamisch zur Laufzeit patchen
+    instance.close = wrapped_close  # type: ignore[assignment]
+
+
+# Patch aktivieren
+dialogs.open = _open_patched
